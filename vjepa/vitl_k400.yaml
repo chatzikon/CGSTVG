@@ -1,13 +1,13 @@
 nodes: 1
 tasks_per_node: 1
-tag: test
+tag: k400
 eval_name: vjepa
 resume_checkpoint: false
 data:
-  dataset_train: /train.csv
-  dataset_val: /val.csv
+  dataset_train: /app/data/kinetics-dataset/k400/train.csv
+  dataset_val: /app/data/kinetics-dataset/k400/val.csv
   dataset_type: VideoDataset
-  num_classes: 2
+  num_classes: 400
   frames_per_clip: 16
   num_segments: 2
   num_views_per_segment: 3

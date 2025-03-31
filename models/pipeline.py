@@ -6,7 +6,7 @@ from .grounding_model import build_encoder, build_decoder
 from utils.misc import NestedTensor
 from .vidswin.video_swin_transformer import vidswin_model
 
-from CGSTVG.vjepa.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict
+from vjepa.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict
 
 class CGSTVG(nn.Module):
     def __init__(self, cfg):
