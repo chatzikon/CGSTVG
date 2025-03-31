@@ -6,6 +6,8 @@ from .grounding_model import build_encoder, build_decoder
 from utils.misc import NestedTensor
 from .vidswin.video_swin_transformer import vidswin_model
 
+from CGSTVG.vjepa.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict
+
 class CGSTVG(nn.Module):
     def __init__(self, cfg):
         super(CGSTVG, self).__init__()
@@ -43,8 +45,29 @@ class CGSTVG(nn.Module):
 
         # add the iteration anchor update
         self.ground_decoder.decoder.bbox_embed = self.bbox_embed
+        
+        self.vjepa_encoder = build_vjepa_encoder()
+        self.vjepa_classifier = build_vjepa_classifier(encoder=self.vjepa_encoder)
+
+        return
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
+
+        # import pdb
+        # pdb.set_trace() # videos = (frames, channels, width, height) for vidstg
+        # T, C, W, H = videos.tensors.shape
+        # B = 1
+        # import torch
+        # clips = torch.reshape(videos.tensors, shape=(1, 1, B, C, T, H, W))
+        clips = videos.tensors
+        outputs = vjepa_predict(
+            encoder=self.vjepa_encoder,
+            classifier=self.vjepa_classifier,
+            clips=clips,
+            clip_indices=targets[0]["frame_ids"],
+            training=self.training,
+        )
+
         # Visual Feature
         vis_outputs, vis_pos_embed = self.vis_encoder(videos)
         vis_features, vis_mask, vis_durations = vis_outputs.decompose()
@@ -100,3 +123,4 @@ class CGSTVG(nn.Module):
                     out["aux_outputs"][i_aux]["pred_actioness"] = outputs_actioness[i_aux]
 
         return out
+

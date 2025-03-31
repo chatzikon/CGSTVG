@@ -1,9 +1,9 @@
-OUTPUT_DIR: data/vidstg/checkpoints/
+OUTPUT_DIR: output/vidstg/checkpoints/
 DATA_DIR: data/vidstg/
-TENSORBOARD_DIR: data/vidstg/checkpoints/tensorboard/
+TENSORBOARD_DIR: output/vidstg/checkpoints/tensorboard/
 
 INPUT:
-  RESOLUTION: 420
+  RESOLUTION: 50 # 100 is ~8GB
   FLIP_PROB_TRAIN: 0.7
   TEMP_CROP_PROB: 0.5
   TRAIN_SAMPLE_NUM: 64
@@ -27,11 +27,11 @@ DATASET:
   NAME: VidSTG
 
 DATALOADER:
-  NUM_WORKERS: 8
+  NUM_WORKERS: 2
   ASPECT_RATIO_GROUPING: False
 
 SOLVER:
-  MAX_EPOCH: 10
+  MAX_EPOCH: 1
   BATCH_SIZE: 1
   BBOX_COEF: 5
   GIOU_COEF: 3
@@ -47,7 +47,7 @@ SOLVER:
   TEMP_LR: 1e-4
   OPTIMIZER: adamw
   VAL_PERIOD: 260000
-  CHECKPOINT_PERIOD: 500
+  CHECKPOINT_PERIOD: 20000
   SHUFFLE: True
   SCHEDULE:
     TYPE: multistep_with_warmup_all
