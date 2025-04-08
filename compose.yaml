@@ -1,0 +1,16 @@
+# Docker Compose version v2.29.7
+services:
+  cgstvg:
+    image: cgstvg
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./model_zoo:/app/model_zoo
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
