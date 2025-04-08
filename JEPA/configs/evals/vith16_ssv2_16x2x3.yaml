@@ -1,22 +1,22 @@
-nodes: 1
-tasks_per_node: 1
-tag: test
-eval_name: vjepa
+nodes: 8
+tasks_per_node: 8
+tag: ssv2-16x2x3
+eval_name: video_classification_frozen
 resume_checkpoint: false
 data:
-  dataset_train: /train.csv
-  dataset_val: /val.csv
+  dataset_train: /your_path_to_ssv2_train_csv_file_index.csv
+  dataset_val: /your_path_to_ssv2_val_csv_file_index.csv
   dataset_type: VideoDataset
-  num_classes: 2
+  num_classes: 174
   frames_per_clip: 16
   num_segments: 2
   num_views_per_segment: 3
   frame_step: 4
 optimization:
   attend_across_segments: true
-  num_epochs: 1
+  num_epochs: 20
   resolution: 224
-  batch_size: 1
+  batch_size: 4
   weight_decay: 0.01
   lr: 0.001
   start_lr: 0.001
@@ -24,7 +24,7 @@ optimization:
   warmup: 0.
   use_bfloat16: true
 pretrain:
-  model_name: vit_large
+  model_name: vit_huge
   checkpoint_key: target_encoder
   clip_duration: null
   frames_per_clip: 16
@@ -34,6 +34,6 @@ pretrain:
   tight_silu: false
   use_sdpa: true
   patch_size: 16
-  folder: /app/model_zoo
-  checkpoint: vitl16.pth.tar  # name of pretrained model file inside folder
+  folder: /your_absolute_file_path_to_directory_where_pretrained_models_are_contained/
+  checkpoint: jepa-latest.pth.tar  # name of pretrained model file inside folder
   write_tag: jepa
