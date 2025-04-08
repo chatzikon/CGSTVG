@@ -175,3 +175,8 @@ cython_debug/
 
 data
 model_zoo
+
+data/
+pretrained_models/
+output/
+__pycache__/
