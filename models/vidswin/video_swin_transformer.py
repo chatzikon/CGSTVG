@@ -758,9 +758,8 @@ configs = {
 }
 
 model_paths = {
-    #'video_swin_b_p4w7_k400_1k': 'swin_base_patch244_window877_kinetics400_1k.pth',
-    'video_swin_t_p4w7_k400_1k': './pretrained_models/swin_tiny_patch244_window877_kinetics400_1k.pth',
-    'video_swin_s_p4w7_k400_1k': 'swin_small_patch244_window877_kinetics400_1k.pth',
+    "video_swin_t_p4w7_k400_1k": "model_zoo/swin_tiny_patch244_window877_kinetics400_1k.pth",
+    "video_swin_s_p4w7_k400_1k": "model_zoo/swin_small_patch244_window877_kinetics400_1k.pth",
 }
 
 

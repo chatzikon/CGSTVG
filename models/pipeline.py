@@ -53,12 +53,12 @@ class CGSTVG(nn.Module):
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
 
-        import pdb
-        pdb.set_trace() # videos = (frames, channels, width, height) for vidstg
-        T, C, W, H = videos.tensors.shape
-        B = 1
-        import torch
-        clips = torch.reshape(videos.tensors, shape=(1, 1, B, C, T, H, W))
+        # import pdb
+        # pdb.set_trace() # videos = (frames, channels, width, height) for vidstg
+        # T, C, W, H = videos.tensors.shape
+        # B = 1
+        # import torch
+        # clips = torch.reshape(videos.tensors, shape=(1, 1, B, C, T, H, W))
         clips = videos.tensors
         outputs = vjepa_predict(
             encoder=self.vjepa_encoder,

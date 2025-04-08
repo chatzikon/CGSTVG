@@ -16,72 +16,8 @@ from engine import make_optimizer, adjust_learning_rate, update_ema, do_eval
 from utils.metric_logger import MetricLogger
 from torch.utils.tensorboard import SummaryWriter
 
-import logging
-import numpy as np
-import torchvision.transforms as transforms
-from timm.data import create_transform as timm_make_transforms
-from src.datasets.data_manager import init_data
-from src.utils.distributed import init_distributed
 
-
-
-logging.basicConfig()
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-_GLOBAL_SEED = 0
-np.random.seed(_GLOBAL_SEED)
-torch.manual_seed(_GLOBAL_SEED)
-torch.backends.cudnn.benchmark = True
-
-def make_dataloader(
-    dataset_name,
-    root_path,
-    image_folder,
-    batch_size,
-    world_size,
-    rank,
-    resolution=224,
-    training=False,
-    subset_file=None
-):
-    normalization = ((0.485, 0.456, 0.406),
-                     (0.229, 0.224, 0.225))
-    if training:
-        logger.info('implementing auto-agument strategy')
-        transform = timm_make_transforms(
-            input_size=resolution,
-            is_training=training,
-            auto_augment='original',
-            interpolation='bicubic',
-            re_prob=0.25,
-            re_mode='pixel',
-            re_count=1,
-            mean=normalization[0],
-            std=normalization[1])
-    else:
-        transform = transforms.Compose([
-            transforms.Resize(size=int(resolution * 256/224)),
-            transforms.CenterCrop(size=resolution),
-            transforms.ToTensor(),
-            transforms.Normalize(normalization[0], normalization[1])])
-
-    data_loader, _ = init_data(
-        data=dataset_name,
-        transform=transform,
-        batch_size=batch_size,
-        world_size=world_size,
-        rank=rank,
-        root_path=root_path,
-        image_folder=image_folder,
-        training=training,
-        copy_data=False,
-        drop_last=False,
-        subset_file=subset_file)
-    return data_loader
-
-
-def train(cfg, args, distributed, logger):
+def train(cfg, local_rank, distributed, logger):
     model, criteria, weight_dict = build_model(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
@@ -93,7 +29,7 @@ def train(cfg, args, distributed, logger):
     
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank,
+            model, device_ids=[local_rank], output_device=local_rank,
             find_unused_parameters=True
         )
         model_without_ddp = model.module
@@ -102,7 +38,7 @@ def train(cfg, args, distributed, logger):
     arguments["iteration"] = 0
 
     output_dir = cfg.OUTPUT_DIR
-    save_to_disk = args.local_rank == 0
+    save_to_disk = local_rank == 0
     checkpointer = VSTGCheckpointer(
         cfg, model_without_ddp, model_ema, optimizer, output_dir, save_to_disk, logger, is_train=True
     )
@@ -118,7 +54,7 @@ def train(cfg, args, distributed, logger):
         verbose_loss.add("loss_actioness")
     
     # Prepare the dataset cache
-    if args.local_rank == 0:
+    if local_rank == 0:
         split = ['train', 'test']
         if cfg.DATASET.NAME == "VidSTG":
             split += ['val']
@@ -126,46 +62,6 @@ def train(cfg, args, distributed, logger):
             _ = build_dataset(cfg, split=mode, transforms=None)
        
     synchronize()
-
-    # -- DATA
-    args_data = args.get('data')
-    dataset_name = args_data.get('dataset_name')
-    root_path = args_data.get('root_path', None)
-    image_folder = args_data.get('image_folder', None)
-    resolution = args_data.get('resolution', 224)
-
-    batch_size = args.get('batch_size')
-
-    world_size, rank = init_distributed()
-    logger.info(f'Initialized (rank/world-size) {rank}/{world_size}')
-
-    ###image data loader
-
-    train_loader = make_dataloader(
-        dataset_name=dataset_name,
-        root_path=root_path,
-        resolution=resolution,
-        image_folder=image_folder,
-        batch_size=batch_size,
-        world_size=world_size,
-        rank=rank,
-        training=True)
-    val_loader = make_dataloader(
-        dataset_name=dataset_name,
-        root_path=root_path,
-        resolution=resolution,
-        image_folder=image_folder,
-        batch_size=batch_size,
-        world_size=world_size,
-        rank=rank,
-        training=False)
-    ipe = len(train_loader)
-    logger.info(f'Dataloader created... iterations per epoch: {ipe}')
-
-
-
-
-    ###video data loader
 
     train_data_loader = make_data_loader(
         cfg,
@@ -349,8 +245,7 @@ def main():
     parser = argparse.ArgumentParser(description="Spatio-Temporal Grounding Training")
     parser.add_argument(
         "--config-file",
-        #default="./experiments/vidstg.yaml",
-        default="./experiments/vitl16_in1k.yaml",
+        default="./experiments/vidstg.yaml",
         metavar="FILE",
         help="path to config file",
         type=str,
@@ -378,10 +273,9 @@ def main():
 
     args = parser.parse_args()
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
-    distributed = num_gpus > 1
+    args.distributed = num_gpus > 1
 
-
-    if distributed:
+    if args.distributed:
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(
             backend="nccl", init_method="env://"
@@ -420,7 +314,7 @@ def main():
     save_config(cfg, output_config_path)
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    model, model_ema = train(cfg, args, distributed, logger)
+    model, model_ema = train(cfg, args.local_rank, args.distributed, logger)
     
     if not args.skip_test:
         run_test(cfg, model, model_ema, logger, args.distributed)
