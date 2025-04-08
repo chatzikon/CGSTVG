@@ -6,7 +6,7 @@ from .grounding_model import build_encoder, build_decoder
 from utils.misc import NestedTensor
 from .vidswin.video_swin_transformer import vidswin_model
 
-from vjepa.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict
+from vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict, VJEPAConfig
 
 class CGSTVG(nn.Module):
     def __init__(self, cfg):
@@ -46,26 +46,31 @@ class CGSTVG(nn.Module):
         # add the iteration anchor update
         self.ground_decoder.decoder.bbox_embed = self.bbox_embed
         
-        self.vjepa_encoder = build_vjepa_encoder()
-        self.vjepa_classifier = build_vjepa_classifier(encoder=self.vjepa_encoder)
-
+        #### V-JEPA extension ####
+        self.vjepa_config = VJEPAConfig()
+        self.vjepa_encoder = build_vjepa_encoder(self.vjepa_config)
+        self.vjepa_classifier = build_vjepa_classifier(
+            config=self.vjepa_config,
+            encoder=self.vjepa_encoder, 
+        )
         return
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
 
-        # import pdb
-        # pdb.set_trace() # videos = (frames, channels, width, height) for vidstg
-        # T, C, W, H = videos.tensors.shape
-        # B = 1
-        # import torch
-        # clips = torch.reshape(videos.tensors, shape=(1, 1, B, C, T, H, W))
-        clips = videos.tensors
+        # videos = [frames, channels, height, width] for vidstg
+        T, C, H, W = videos.tensors.shape
+        B = 1
+        import torch
+        clips = [[torch.reshape(videos.tensors, shape=(B, C, T, H, W))]]
+        # clips = videos.tensors
+
         outputs = vjepa_predict(
             encoder=self.vjepa_encoder,
             classifier=self.vjepa_classifier,
             clips=clips,
             clip_indices=targets[0]["frame_ids"],
             training=self.training,
+            config=self.vjepa_config,
         )
 
         # Visual Feature

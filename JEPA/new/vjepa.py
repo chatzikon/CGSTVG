@@ -68,7 +68,7 @@ pp = pprint.PrettyPrinter(indent=4)
 
 def process_main():
     rank = 0
-    fname = "vjepa/test.yaml"
+    fname = "JEPA/new/vitl16_k400_16x8x3.yaml"
     world_size = 1
     devices = ["cuda:0"]
 
@@ -99,88 +99,89 @@ def process_main():
     return params
 
 
-def build_vjepa_encoder():
-    args_eval = process_main()
-    # -- PRETRAIN
-    args_pretrain = args_eval.get('pretrain')
-    checkpoint_key = args_pretrain.get('checkpoint_key', 'target_encoder')
-    model_name = args_pretrain.get('model_name', None)
-    patch_size = args_pretrain.get('patch_size', None)
-    pretrain_folder = args_pretrain.get('folder', None)
-    ckp_fname = args_pretrain.get('checkpoint', None)
-    tag = args_pretrain.get('write_tag', None)
-    use_sdpa = args_pretrain.get('use_sdpa', True)
-    use_SiLU = args_pretrain.get('use_silu', False)
-    tight_SiLU = args_pretrain.get('tight_silu', True)
-    uniform_power = args_pretrain.get('uniform_power', False)
-    pretrained_path = os.path.join(pretrain_folder, ckp_fname)
-    # Optional [for Video model]:
-    tubelet_size = args_pretrain.get('tubelet_size', 2)
-    pretrain_frames_per_clip = args_pretrain.get('frames_per_clip', 1)
+class VJEPAConfig:
+    def __init__(self):
+        args_eval = process_main()
+        # -- PRETRAIN
+        args_pretrain = args_eval.get('pretrain')
+        self.checkpoint_key = args_pretrain.get('checkpoint_key', 'target_encoder')
+        self.model_name = args_pretrain.get('model_name', None)
+        self.patch_size = args_pretrain.get('patch_size', None)
+        self.pretrain_folder = args_pretrain.get('folder', None)
+        self.ckp_fname = args_pretrain.get('checkpoint', None)
+        self.tag = args_pretrain.get('write_tag', None)
+        self.use_sdpa = args_pretrain.get('use_sdpa', True)
+        self.use_SiLU = args_pretrain.get('use_silu', False)
+        self.tight_SiLU = args_pretrain.get('tight_silu', True)
+        self.uniform_power = args_pretrain.get('uniform_power', False)
+        self.pretrained_path = os.path.join(self.pretrain_folder, self.ckp_fname)
+        # Optional [for Video model]:
+        self.tubelet_size = args_pretrain.get('tubelet_size', 2)
+        self.pretrain_frames_per_clip = args_pretrain.get('frames_per_clip', 1)
 
-    # -- DATA
-    args_data = args_eval.get('data')
-    train_data_path = [args_data.get('dataset_train')]
-    val_data_path = [args_data.get('dataset_val')]
-    dataset_type = args_data.get('dataset_type', 'VideoDataset')
-    num_classes = args_data.get('num_classes')
-    eval_num_segments = args_data.get('num_segments', 1)
-    eval_frames_per_clip = args_data.get('frames_per_clip', 16)
-    eval_frame_step = args_pretrain.get('frame_step', 4)
-    eval_duration = args_pretrain.get('clip_duration', None)
-    eval_num_views_per_segment = args_data.get('num_views_per_segment', 1)
+        # -- DATA
+        args_data = args_eval.get('data')
+        self.train_data_path = [args_data.get('dataset_train')]
+        self.val_data_path = [args_data.get('dataset_val')]
+        self.dataset_type = args_data.get('dataset_type', 'VideoDataset')
+        self.num_classes = args_data.get('num_classes')
+        self.eval_num_segments = args_data.get('num_segments', 1)
+        self.eval_frames_per_clip = args_data.get('frames_per_clip', 16)
+        self.eval_frame_step = args_pretrain.get('frame_step', 4)
+        self.eval_duration = args_pretrain.get('clip_duration', None)
+        self.eval_num_views_per_segment = args_data.get('num_views_per_segment', 1)
 
-    # -- OPTIMIZATION
-    args_opt = args_eval.get('optimization')
-    resolution = args_opt.get('resolution', 224)
-    batch_size = args_opt.get('batch_size')
-    attend_across_segments = args_opt.get('attend_across_segments', False)
-    num_epochs = args_opt.get('num_epochs')
-    wd = args_opt.get('weight_decay')
-    start_lr = args_opt.get('start_lr')
-    lr = args_opt.get('lr')
-    final_lr = args_opt.get('final_lr')
-    warmup = args_opt.get('warmup')
-    use_bfloat16 = args_opt.get('use_bfloat16')
+        # -- OPTIMIZATION
+        args_opt = args_eval.get('optimization')
+        self.resolution = args_opt.get('resolution', 224)
+        self.batch_size = args_opt.get('batch_size')
+        self.attend_across_segments = args_opt.get('attend_across_segments', False)
+        self.num_epochs = args_opt.get('num_epochs')
+        self.wd = args_opt.get('weight_decay')
+        self.start_lr = args_opt.get('start_lr')
+        self.lr = args_opt.get('lr')
+        self.final_lr = args_opt.get('final_lr')
+        self.warmup = args_opt.get('warmup')
+        self.use_bfloat16 = args_opt.get('use_bfloat16')
 
-    # -- EXPERIMENT-ID/TAG (optional)
-    resume_checkpoint = args_eval.get('resume_checkpoint', False)
-    eval_tag = args_eval.get('tag', None)
+        # -- EXPERIMENT-ID/TAG (optional)
+        self.resume_checkpoint = args_eval.get('resume_checkpoint', False)
+        self.eval_tag = args_eval.get('tag', None)
+        
+        # -- PROBE CONFIG
+        self.probe_frozen = True
+        self.probe_checkpoint = "/app/model_zoo/k400-probe.pth.tar"
+        return
 
-    # ----------------------------------------------------------------------- #
-    # if not torch.cuda.is_available():
-    #     device = torch.device('cpu')
-    # else:
-    #     device = torch.device('cuda:0')
-    #     torch.cuda.set_device(device)
-    
+
+def build_vjepa_encoder(config):
     device = "cpu" # caller is responsible for sending the model to the correct device
 
     # Initialize model
 
     # -- pretrained encoder (frozen)
     encoder = init_model(
-        crop_size=resolution,
+        crop_size=config.resolution,
         device=device,
-        pretrained=pretrained_path,
-        model_name=model_name,
-        patch_size=patch_size,
-        tubelet_size=tubelet_size,
-        frames_per_clip=pretrain_frames_per_clip,
-        uniform_power=uniform_power,
-        checkpoint_key=checkpoint_key,
-        use_SiLU=use_SiLU,
-        tight_SiLU=tight_SiLU,
-        use_sdpa=use_sdpa)
-    if pretrain_frames_per_clip == 1:
+        pretrained=config.pretrained_path,
+        model_name=config.model_name,
+        patch_size=config.patch_size,
+        tubelet_size=config.tubelet_size,
+        frames_per_clip=config.pretrain_frames_per_clip,
+        uniform_power=config.uniform_power,
+        checkpoint_key=config.checkpoint_key,
+        use_SiLU=config.use_SiLU,
+        tight_SiLU=config.tight_SiLU,
+        use_sdpa=config.use_sdpa)
+    if config.pretrain_frames_per_clip == 1:
         # Process each frame independently and aggregate
         encoder = FrameAggregation(encoder).to(device)
     else:
         # Process each video clip independently and aggregate
         encoder = ClipAggregation(
             encoder,
-            tubelet_size=tubelet_size,
-            attend_across_segments=attend_across_segments
+            tubelet_size=config.tubelet_size,
+            attend_across_segments=config.attend_across_segments
         ).to(device)
     encoder.eval()
     for p in encoder.parameters():
@@ -188,30 +189,58 @@ def build_vjepa_encoder():
     return encoder
 
 
-def build_vjepa_classifier(encoder, num_classes=2):
+def build_vjepa_classifier(config, encoder):
     device = "cpu" # caller is responsible for sending the model to the correct device
+
     # -- init classifier
     classifier = AttentiveClassifier(
         embed_dim=encoder.embed_dim,
         num_heads=encoder.num_heads,
         depth=1,
-        num_classes=num_classes,
+        num_classes=config.num_classes,
     ).to(device)
+    
+    if config.probe_checkpoint is not "":
+        classifier = load_probe_checkpoint(classifier=classifier, path=config.probe_checkpoint)
+    
+    if config.probe_frozen:
+        freeze_weights(classifier)
+    
     return classifier
 
 
-def vjepa_predict(encoder, classifier, clips, clip_indices, training, attend_across_segments=False, use_bfloat16=False):
-    with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_bfloat16):
+def load_probe_checkpoint(classifier, path):
+    device = "cpu" # caller is responsible for sending the model to the correct device
+
+    # -- load checkpoint
+    classifier, _, _, _ = load_checkpoint(
+        device=device,
+        r_path=path,
+        classifier=classifier,
+    )
+    return classifier
+
+
+def freeze_weights(model):
+    # -- freeze weights
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad = False
+    return
+
+
+def vjepa_predict(encoder, classifier, clips, clip_indices, training, config):
+    with torch.cuda.amp.autocast(dtype=torch.float16, enabled=config.use_bfloat16):
         # Forward and prediction
         with torch.no_grad():
             outputs = encoder(clips, clip_indices)
             if not training:
-                if attend_across_segments:
+                if config.attend_across_segments:
                     outputs = [classifier(o) for o in outputs]
                 else:
                     outputs = [[classifier(ost) for ost in os] for os in outputs]
         if training:
-            if attend_across_segments:
+            if config.attend_across_segments:
                 outputs = [classifier(o) for o in outputs]
             else:
                 outputs = [[classifier(ost) for ost in os] for os in outputs]
@@ -306,8 +335,8 @@ def load_checkpoint(
     device,
     r_path,
     classifier,
-    opt,
-    scaler
+    opt=None,
+    scaler=None,
 ):
     try:
         checkpoint = torch.load(r_path, map_location=torch.device('cpu'))
@@ -315,8 +344,17 @@ def load_checkpoint(
 
         # -- loading encoder
         pretrained_dict = checkpoint['classifier']
+        
+        for key in list(pretrained_dict.keys()):
+            if "module." in key:
+                pretrained_dict[key.replace("module.", "")] = pretrained_dict[key]
+                del pretrained_dict[key]
+
         msg = classifier.load_state_dict(pretrained_dict)
         logger.info(f'loaded pretrained classifier from epoch {epoch} with msg: {msg}')
+
+        if opt is None or scaler is None:
+            return classifier, opt, scaler, epoch
 
         # -- loading optimizer
         opt.load_state_dict(checkpoint['opt'])
