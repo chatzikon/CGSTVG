@@ -200,10 +200,10 @@ def make_vidstg_input_clip(cfg, split, video_data):
         else:
             end_idx = len(video_frames) - 1
 
-        sample_slice = list(range(start_idx, end_idx + 1))  
+        sample_slice = list(range(start_idx, start_idx + (4 * input_frame_num - 1)))  
     
     else:
-        sample_slice = list(range(0, len(video_frames))) 
+        sample_slice = list(range(0, 4 * input_frame_num - 1)) 
 
     # Need to Sample the input frames to satisfy
     if len(sample_slice) > input_frame_num:

@@ -30,3 +30,4 @@ ENV PYTHONWARNINGS="ignore"
 ENV PYTHONUNBUFFERED="1"
 
 CMD [ "bash", "vidstg.sh" ]
+# CMD [ "bash", "JEPA/new/vjepa.sh" ]

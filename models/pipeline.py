@@ -7,6 +7,7 @@ from utils.misc import NestedTensor
 from .vidswin.video_swin_transformer import vidswin_model
 
 from vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict, VJEPAConfig
+import torch
 
 class CGSTVG(nn.Module):
     def __init__(self, cfg):
@@ -57,21 +58,28 @@ class CGSTVG(nn.Module):
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
 
-        # videos = [frames, channels, height, width] for vidstg
-        T, C, H, W = videos.tensors.shape
+        NCLIPS = 8
+        VIEWS_PER_CLIP = 1
+        FRAMES_PER_CLIP = 16
         B = 1
-        import torch
-        clips = [[torch.reshape(videos.tensors, shape=(B, C, T, H, W))]]
-        # clips = videos.tensors
 
-        outputs = vjepa_predict(
-            encoder=self.vjepa_encoder,
-            classifier=self.vjepa_classifier,
-            clips=clips,
-            clip_indices=targets[0]["frame_ids"],
-            training=self.training,
-            config=self.vjepa_config,
-        )
+        v = videos.tensors
+        T, C, H, W = v.shape
+        # v = v.reshape(shape=(NCLIPS, FRAMES_PER_CLIP, C, H, W)).reshape(shape=(NCLIPS, VIEWS_PER_CLIP, B, C, FRAMES_PER_CLIP, H, W))
+        v = v.reshape(shape=(NCLIPS, VIEWS_PER_CLIP, B, C, FRAMES_PER_CLIP, H, W))
+
+        f = targets[0]["frame_ids"]
+        f = torch.reshape(f, (8, 16))
+        
+        clips = v
+        clip_indices = f
+
+        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=self.vjepa_config.use_bfloat16):
+            # Forward and prediction
+            with torch.no_grad():
+                vjepa_features = self.vjepa_encoder(clips, clip_indices)
+        print(vjepa_features[0].shape)
+
 
         # Visual Feature
         vis_outputs, vis_pos_embed = self.vis_encoder(videos)
