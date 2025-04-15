@@ -118,9 +118,10 @@ class ClipAggregation(nn.Module):
         num_views_per_clip = len(x[0])
         B, C, T, H, W = x[0][0].size()
 
-        # Concatenate all spatial and temporal views along batch dimension
-        x = [torch.cat(xi, dim=0) for xi in x]
-        x = torch.cat(x, dim=0)
+        # Concatenate all spatial and temporal views along batch dimension 
+        # x = [torch.cat(xi, dim=0) for xi in x]
+        # x = torch.cat(x, dim=0)
+        x = x.reshape((num_clips * num_views_per_clip * B, C, T, H, W))
         outputs = self.model(x)
         _, N, D = outputs.size()
 

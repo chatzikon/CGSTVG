@@ -7,7 +7,8 @@ python3 -m pdb -c continue -m torch.distributed.launch \
     --config-file "experiments/vidstg.yaml" \
     INPUT.RESOLUTION 32 \
     OUTPUT_DIR output/vidstg \
-    TENSORBOARD_DIR output/vidstg
+    TENSORBOARD_DIR output/vidstg \
+    | tee output.txt
 
 ## EVALUATION
 # python3 -m pdb -c continue -m torch.distributed.launch \

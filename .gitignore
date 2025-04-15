@@ -180,3 +180,5 @@ data/
 pretrained_models/
 output/
 __pycache__/
+
+output
