@@ -249,8 +249,6 @@ class VidSTGDataset(data.Dataset):
         last_frame_index = total_frames - 1
         clip_indices = []
         for i in range(num_segments):
-            # If partition_len > clip len, then sample a random window of
-            # clip_len frames within the segment
             start_index = np.random.randint(first_frame_index, last_frame_index)
             end_index = start_index + frames_per_segment - 1
             indices = np.linspace(start_index, end_index, num=frames_per_segment)

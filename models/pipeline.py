@@ -63,22 +63,15 @@ class CGSTVG(nn.Module):
         FRAMES_PER_CLIP = 16
         B = 1
 
-        v = videos.tensors
-        T, C, H, W = v.shape
-        # v = v.reshape(shape=(NCLIPS, FRAMES_PER_CLIP, C, H, W)).reshape(shape=(NCLIPS, VIEWS_PER_CLIP, B, C, FRAMES_PER_CLIP, H, W))
-        v = v.reshape(shape=(NCLIPS, VIEWS_PER_CLIP, B, C, FRAMES_PER_CLIP, H, W))
-
-        f = targets[0]["frame_ids"]
-        f = torch.reshape(f, (8, 16))
+        T, C, H, W = videos.tensors.shape
+        clips = videos.tensors.reshape(shape=(NCLIPS, VIEWS_PER_CLIP, B, C, FRAMES_PER_CLIP, H, W))
+        clip_indices = torch.reshape(targets[0]["frame_ids"], (NCLIPS, FRAMES_PER_CLIP))
         
-        clips = v
-        clip_indices = f
 
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=self.vjepa_config.use_bfloat16):
-            # Forward and prediction
             with torch.no_grad():
                 vjepa_features = self.vjepa_encoder(clips, clip_indices)
-        print(vjepa_features[0].shape)
+        print(vjepa_features[0].shape) # [1, 256, 1024]
 
 
         # Visual Feature
@@ -88,7 +81,7 @@ class CGSTVG(nn.Module):
         vis_outputs = NestedTensor(vis_features, vis_mask, vis_durations)
 
         vid_features = self.vid(videos.tensors, len(videos.tensors))
-        vid_features = self.input_proj2(vid_features['3'])
+        vid_features = self.input_proj2(vid_features['3']) # [128, 256, 1, 2]
      
         # Textual Feature
         device = vis_features.device
