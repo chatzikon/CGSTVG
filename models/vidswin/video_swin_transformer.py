@@ -758,8 +758,8 @@ configs = {
 }
 
 model_paths = {
-    "video_swin_t_p4w7_k400_1k": "model_zoo/swin_tiny_patch244_window877_kinetics400_1k.pth",
-    "video_swin_s_p4w7_k400_1k": "model_zoo/swin_small_patch244_window877_kinetics400_1k.pth",
+    "video_swin_t_p4w7_k400_1k": "./pretrained_models/swin_tiny_patch244_window877_kinetics400_1k.pth",
+    #"video_swin_s_p4w7_k400_1k": "model_zoo/swin_small_patch244_window877_kinetics400_1k.pth",
 }
 
 
@@ -768,6 +768,7 @@ def vidswin_model(model_name: AnyStr, model_path: AnyStr = None):
     assert model_path is None or (model_path in model_paths.keys() or os.path.exists(model_path)), \
         f"The specified model_path '{model_path}' is invalid. It must either be an existing file path or " \
         f"a valid key listed in {model_paths.keys()}."
+    print(model_path)
     if model_path is not None:
         if model_path in model_paths:
             model_path = model_paths[model_path]
