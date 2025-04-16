@@ -6,7 +6,7 @@ from .grounding_model import build_encoder, build_decoder
 from utils.misc import NestedTensor
 from .vidswin.video_swin_transformer import vidswin_model
 
-from vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict, VJEPAConfig
+from JEPA.new.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict, VJEPAConfig
 import torch
 
 class CGSTVG(nn.Module):
@@ -48,12 +48,12 @@ class CGSTVG(nn.Module):
         self.ground_decoder.decoder.bbox_embed = self.bbox_embed
         
         #### V-JEPA extension ####
-        # self.vjepa_config = VJEPAConfig()
-        # self.vjepa_encoder = build_vjepa_encoder(self.vjepa_config)
-        # self.vjepa_classifier = build_vjepa_classifier(
-        #     config=self.vjepa_config,
-        #     encoder=self.vjepa_encoder,
-        # )
+        self.vjepa_config = VJEPAConfig()
+        self.vjepa_encoder = build_vjepa_encoder(self.vjepa_config)
+        self.vjepa_classifier = build_vjepa_classifier(
+            config=self.vjepa_config,
+            encoder=self.vjepa_encoder,
+        )
         return
 
     def forward(self, videos, texts, targets, iteration_rate=-1):

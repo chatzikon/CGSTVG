@@ -17,29 +17,6 @@ from utils.metric_logger import MetricLogger
 from torch.utils.tensorboard import SummaryWriter
 
 
-
-import logging
-import numpy as np
-
-from scripts.image_loader import *
-from scripts.video_loader import *
-
-
-logging.basicConfig()
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-_GLOBAL_SEED = 0
-np.random.seed(_GLOBAL_SEED)
-torch.manual_seed(_GLOBAL_SEED)
-torch.backends.cudnn.benchmark = True
-
-
-
-
-
-
-
 def train(cfg, local_rank, distributed, logger):
     model, criteria, weight_dict = build_model(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
@@ -49,14 +26,14 @@ def train(cfg, local_rank, distributed, logger):
     optimizer = make_optimizer(cfg, model, logger)
     model_ema = deepcopy(model) if cfg.MODEL.EMA else None
     model_without_ddp = model
-    
+
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[local_rank], output_device=local_rank,
             find_unused_parameters=True
         )
         model_without_ddp = model.module
-    
+
     arguments = {}
     arguments["iteration"] = 0
 
@@ -67,15 +44,15 @@ def train(cfg, local_rank, distributed, logger):
     )
     extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
     arguments.update(extra_checkpoint_data)
-    
+
     verbose_loss = set(["loss_bbox", "loss_giou", "loss_sted", "loss_conf"])
-    
+
     if cfg.SOLVER.USE_ATTN:
         verbose_loss.add("loss_guided_attn")
-    
+
     if cfg.MODEL.CG.USE_ACTION:
         verbose_loss.add("loss_actioness")
-    
+
     # Prepare the dataset cache
     if local_rank == 0:
         split = ['train', 'test']
@@ -83,55 +60,33 @@ def train(cfg, local_rank, distributed, logger):
             split += ['val']
         for mode in split:
             _ = build_dataset(cfg, split=mode, transforms=None)
-       
+
     synchronize()
 
-    if not torch.cuda.is_available():
-        device = torch.device('cpu')
-    else:
-        device = torch.device('cuda:0')
-        torch.cuda.set_device(device)
-
-
-
-    ##jepa image classifier
-
-    image_train_loader,image_val_loader=image_loader(logger,cfg)
-
-
-    ##jepa video classifier
-    video_train_loader, video_val_loader=video_loader(logger,cfg)
-
-
-
-
-
-
-    ##CGSTVG dataloader
-    # train_data_loader = make_data_loader(
-    #     cfg,
-    #     mode='train',
-    #     is_distributed=distributed,
-    #     start_iter=arguments["iteration"],
-    # )
-    # val_data_loader = make_data_loader(
-    #     cfg,
-    #     mode='val' if cfg.DATASET.NAME == "VidSTG" else "test",
-    #     is_distributed=distributed,
-    # )
+    train_data_loader = make_data_loader(
+        cfg,
+        mode='train',
+        is_distributed=distributed,
+        start_iter=arguments["iteration"],
+    )
+    val_data_loader = make_data_loader(
+        cfg,
+        mode='val' if cfg.DATASET.NAME == "VidSTG" else "test",
+        is_distributed=distributed,
+    )
 
     if cfg.TENSORBOARD_DIR and is_main_process():
         writer = SummaryWriter(cfg.TENSORBOARD_DIR)
     else:
         writer = None
-    
+
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
     logger.info("Start training")
 
     if cfg.SOLVER.PRE_VAL:
         logger.info("Validating before training")
         run_eval(cfg, model, model_ema, logger, val_data_loader, device)
-    
+
     metric_logger = MetricLogger(delimiter="  ")
     max_iter = len(train_data_loader)
     start_iter = arguments["iteration"]
@@ -149,9 +104,9 @@ def train(cfg, local_rank, distributed, logger):
         videos = batch_dict['videos'].to(device)
         texts = batch_dict['texts']
         durations = batch_dict['durations']
-        targets = to_device(batch_dict["targets"], device) 
+        targets = to_device(batch_dict["targets"], device)
         targets[0]["durations"] = durations
-        outputs = model(videos, texts, targets, iteration/max_iter)
+        outputs = model(videos, texts, targets, iteration / max_iter)
 
         # compute loss
         loss_dict = criteria(outputs, targets, durations)
@@ -159,15 +114,15 @@ def train(cfg, local_rank, distributed, logger):
         # loss used for update param
         # assert set(weight_dict.keys()) == set(loss_dict.keys())
         losses = sum(loss_dict[k] * weight_dict[k] for k in \
-                            loss_dict.keys() if k in weight_dict)
+                     loss_dict.keys() if k in weight_dict)
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = reduce_loss_dict(loss_dict)
-        loss_dict_reduced_unscaled = {f"{k}_unscaled" : v \
-                        for k, v in loss_dict_reduced.items()}
+        loss_dict_reduced_unscaled = {f"{k}_unscaled": v \
+                                      for k, v in loss_dict_reduced.items()}
         loss_dict_reduced_scaled = {
-            k : v * weight_dict[k] for k, v in loss_dict_reduced.items()\
-                 if k in weight_dict and k in verbose_loss
+            k: v * weight_dict[k] for k, v in loss_dict_reduced.items() \
+            if k in weight_dict and k in verbose_loss
         }
         losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
         loss_value = losses_reduced_scaled.item()
@@ -196,7 +151,7 @@ def train(cfg, local_rank, distributed, logger):
         if writer is not None and is_main_process() and iteration % 50 == 0:
             for k in loss_dict_reduced_scaled:
                 writer.add_scalar(f"{k}", metric_logger.meters[k].avg, iteration)
-        
+
         if iteration % 50 == 0 or iteration == max_iter:
             logger.info(
                 metric_logger.delimiter.join(
@@ -213,7 +168,7 @@ def train(cfg, local_rank, distributed, logger):
                 ).format(
                     eta=eta_string,
                     iter=iteration,
-                    max_iter = max_iter,
+                    max_iter=max_iter,
                     meters=str(metric_logger),
                     lr=optimizer.param_groups[0]["lr"],
                     lr_vis=optimizer.param_groups[1]["lr"],
@@ -225,7 +180,7 @@ def train(cfg, local_rank, distributed, logger):
 
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:06d}".format(iteration), **arguments)
-            
+
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
 
@@ -249,7 +204,7 @@ def run_eval(cfg, model, model_ema, logger, val_data_loader, device):
     logger.info("Start validating")
     test_model = model_ema if model_ema is not None else model
     evaluator = build_evaluator(cfg, logger, mode='val' \
-        if cfg.DATASET.NAME == "VidSTG" else "test",)   # mode = ['val','test']
+        if cfg.DATASET.NAME == "VidSTG" else "test", )  # mode = ['val','test']
     postprocessor = build_postprocessors()
     torch.cuda.empty_cache()
     do_eval(
@@ -270,7 +225,7 @@ def run_test(cfg, model, model_ema, logger, distributed):
     test_model = model_ema if model_ema is not None else model
     torch.cuda.empty_cache()
 
-    evaluator = build_evaluator(cfg, logger, mode='test')   # mode = ['val','test']
+    evaluator = build_evaluator(cfg, logger, mode='test')  # mode = ['val','test']
     postprocessor = build_postprocessors()
     val_data_loader = make_data_loader(cfg, mode='test', is_distributed=distributed)
     do_eval(
@@ -329,7 +284,7 @@ def main():
 
     if args.config_file:
         cfg.merge_from_file(args.config_file)
-        
+
     cfg.merge_from_list(args.opts)
     cfg.freeze()
 
@@ -337,9 +292,9 @@ def main():
         cudnn.benchmark = False
         cudnn.deterministic = True
         set_seed(args.seed + get_rank())
-    
+
     synchronize()
-    
+
     output_dir = cfg.OUTPUT_DIR
     if output_dir:
         mkdir(output_dir)
@@ -347,10 +302,10 @@ def main():
     logger = setup_logger("Video Grounding", output_dir, get_rank())
     logger.info("Using {} GPUs".format(num_gpus))
     logger.info(args)
-    
+
     if args.config_file:
         logger.info("Loaded configuration file {}".format(args.config_file))
-    
+
     logger.info("Running with config:\n{}".format(cfg))
 
     output_config_path = os.path.join(cfg.OUTPUT_DIR, 'config.yml')
@@ -360,7 +315,7 @@ def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     model, model_ema = train(cfg, args.local_rank, args.distributed, logger)
-    
+
     if not args.skip_test:
         run_test(cfg, model, model_ema, logger, args.distributed)
 
