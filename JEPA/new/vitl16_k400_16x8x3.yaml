@@ -4,8 +4,8 @@ tag: k400-16x8x3
 eval_name: video_classification_frozen
 resume_checkpoint: false
 data:
-  dataset_train: '/home/ilias/PycharmProjects/pythonProject1/jepa/kinetics400_train.csv'
-  dataset_val: '/home/ilias/PycharmProjects/pythonProject1/jepa/kinetics400_val.csv'
+  dataset_train: '/app/data/kinetics400/train.csv'
+  dataset_val: '/app/data/kinetics400/val.csv'
   dataset_type: VideoDataset
   num_classes: 400
   frames_per_clip: 16
@@ -34,6 +34,6 @@ pretrain:
   tight_silu: false
   use_sdpa: true
   patch_size: 16
-  folder: '/home/ilias/PycharmProjects/pythonProject1/jepa/checkpoints/pretrained/ViT-L'
+  folder: 'app/model_zoo'
   checkpoint: vitl16.pth.tar  # name of pretrained model file inside folder
   write_tag: jepa

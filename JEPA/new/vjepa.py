@@ -28,25 +28,25 @@ import torch.nn.functional as F
 
 from torch.nn.parallel import DistributedDataParallel
 
-import JEPA.src.models.vision_transformer as vit
-from JEPA.src.models.attentive_pooler import AttentiveClassifier
-from JEPA.src.datasets.data_manager import (
+import src.models.vision_transformer as vit
+from src.models.attentive_pooler import AttentiveClassifier
+from src.datasets.data_manager import (
     init_data,
 )
-from JEPA.src.utils.distributed import (
+from src.utils.distributed import (
     init_distributed,
     AllReduce
 )
-from JEPA.src.utils.schedulers import (
+from src.utils.schedulers import (
     WarmupCosineSchedule,
     CosineWDSchedule,
 )
-from JEPA.src.utils.logging import (
+from src.utils.logging import (
     AverageMeter,
     CSVLogger
 )
 
-from JEPA.evals.video_classification_frozen.utils import (
+from evals.video_classification_frozen.utils import (
     make_transforms,
     ClipAggregation,
     FrameAggregation
