@@ -17,8 +17,8 @@ import torchvision
 import torchvision.transforms.functional as F
 from torchvision import transforms
 
-import JEPA.src.datasets.utils.video.functional as FF
-from JEPA.src.datasets.utils.video.randaugment import rand_augment_transform
+import src.datasets.utils.video.functional as FF
+from src.datasets.utils.video.randaugment import rand_augment_transform
 
 
 _pil_interpolation_to_str = {

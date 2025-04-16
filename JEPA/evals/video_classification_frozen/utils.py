@@ -11,13 +11,13 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
-import JEPA.src.datasets.utils.video.transforms as video_transforms
-import JEPA.src.datasets.utils.video.volume_transforms as volume_transforms
+import src.datasets.utils.video.transforms as video_transforms
+import src.datasets.utils.video.volume_transforms as volume_transforms
 
-from JEPA.src.datasets.utils.video.randerase import RandomErasing
+from src.datasets.utils.video.randerase import RandomErasing
 
-from JEPA.src.models.utils.pos_embs import get_1d_sincos_pos_embed
-from JEPA.src.masks.utils import apply_masks
+from src.models.utils.pos_embs import get_1d_sincos_pos_embed
+from src.masks.utils import apply_masks
 
 
 class FrameAggregation(nn.Module):
