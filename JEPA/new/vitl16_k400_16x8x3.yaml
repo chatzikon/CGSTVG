@@ -7,7 +7,8 @@ data:
   dataset_train: 'JEPΑ/app/data/kinetics400/train.csv'
   dataset_val: 'JEPA/app/data/kinetics400/val.csv'
   dataset_type: VideoDataset
-  num_classes: 400
+  num_classes_vid: 400
+  num_classes_img: 1000
   frames_per_clip: 16
   num_segments: 8
   num_views_per_segment: 3

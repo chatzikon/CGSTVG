@@ -101,6 +101,10 @@ def train(cfg, local_rank, distributed, logger):
         iteration = iteration + 1
         arguments["iteration"] = iteration
 
+
+
+
+
         videos = batch_dict['videos'].to(device)
         texts = batch_dict['texts']
         durations = batch_dict['durations']

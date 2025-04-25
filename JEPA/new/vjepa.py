@@ -124,7 +124,9 @@ class VJEPAConfig:
         self.train_data_path = [args_data.get('dataset_train')]
         self.val_data_path = [args_data.get('dataset_val')]
         self.dataset_type = args_data.get('dataset_type', 'VideoDataset')
-        self.num_classes = args_data.get('num_classes')
+        self.num_classes_vid = args_data.get('num_classes_vid')
+        self.num_classes_img = args_data.get('num_classes_img')
+
         self.eval_num_segments = args_data.get('num_segments', 1)
         self.eval_frames_per_clip = args_data.get('frames_per_clip', 16)
         self.eval_frame_step = args_pretrain.get('frame_step', 4)
@@ -189,19 +191,27 @@ def build_vjepa_encoder(config):
     return encoder
 
 
-def build_vjepa_classifier(config, encoder):
+def build_vjepa_classifier(config, encoder, video_data=True,checkpoint_path=None):
     device = "cpu" # caller is responsible for sending the model to the correct device
+
+    if video_data:
+        num_classes=config.num_classes_vid
+    else:
+        num_classes=config.num_classes_img
 
     # -- init classifier
     classifier = AttentiveClassifier(
         embed_dim=encoder.embed_dim,
         num_heads=encoder.num_heads,
         depth=1,
-        num_classes=config.num_classes,
+        num_classes=num_classes,
     ).to(device)
-    
-    if config.probe_checkpoint is not "":
-        classifier = load_probe_checkpoint(classifier=classifier, path=config.probe_checkpoint)
+
+    if checkpoint_path is not None:
+        config.probe_checkpoint=checkpoint_path
+
+
+    classifier = load_probe_checkpoint(classifier=classifier, path=config.probe_checkpoint)
     
     if config.probe_frozen:
         freeze_weights(classifier)
