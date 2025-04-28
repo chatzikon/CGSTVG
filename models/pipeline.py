@@ -18,17 +18,17 @@ from  models.grounding_model.position_encoding import SeqEmbeddingLearned, SeqEm
 from models.bert_model.bert_module import BertLayerNorm
 
 
-def modality_concatenation(self,feat_2d, feat_motion, feat_text,pos_motion,pos_rgb):
+def modality_concatenation(self,feat_2d, feat_motion, feat_text):
 
 
 
-    # expand the attention mask and text token from [b, len] to [n_frames, len]
     frame_length = feat_2d.size()[0]
-    text_features = feat_text.expand(feat_text.size(0), frame_length,feat_text.size(-1))  # [text_len, n_frames, d_model]
+    feat_text = feat_text.expand(feat_text.size(0), frame_length, feat_text.size(-1))
+
 
 
         # concat visual and text features and Pad the vis_pos with 0 for the text tokens
-    concat_features = torch.cat([feat_2d.permute(1,0,2), text_features, feat_motion.permute(1,0,2)], dim=0)
+    concat_features = torch.cat([feat_2d.permute(1,0,2), feat_text, feat_motion.permute(1,0,2)], dim=0)
     #vis_pos = torch.cat([pos_motion, torch.zeros_like(text_features), pos_rgb], dim=0)
 
     frames_cls = torch.mean(concat_features, dim=0)
@@ -111,16 +111,15 @@ class CGSTVG(nn.Module):
 
 
 
+
         ###embeds
-        self.motion_embed = MLP(1,(self.NCLIPS*self.FRAMES_PER_CLIP)//2, self.NCLIPS*self.FRAMES_PER_CLIP,2, dropout=0.3)
-        self.rgb_embed = MLP(1, (self.NCLIPS*self.FRAMES_PER_CLIP)//2, self.NCLIPS*self.FRAMES_PER_CLIP,2, dropout=0.3)
+        self.motion_embed = MLP(1, (self.NCLIPS * self.FRAMES_PER_CLIP) // 2, self.NCLIPS * self.FRAMES_PER_CLIP, 2,dropout=0.3)
+        self.rgb_embed = MLP(1, (self.NCLIPS * self.FRAMES_PER_CLIP) // 2, self.NCLIPS * self.FRAMES_PER_CLIP, 2,dropout=0.3)
+
+        self.mask_motion_embed = nn.Linear(self.vjepa_config.num_classes_vid, hidden_dim, bias=True)
+        self.mask_rgb_embed = nn.Linear(self.vjepa_config.num_classes_img, hidden_dim, bias=True)
 
 
-        self.encoder_motion_embed= nn.Linear((hidden_dim*hidden_dim)//(self.NCLIPS*self.FRAMES_PER_CLIP), self.vjepa_config.num_classes_vid, bias=True)
-        self.encoder_rgb_embed = nn.Linear((hidden_dim*hidden_dim)//(self.NCLIPS*self.FRAMES_PER_CLIP), self.vjepa_config.num_classes_img, bias=True)
-
-        self.mask_motion_embed=nn.Linear(self.vjepa_config.num_classes_vid, hidden_dim, bias=True)
-        self.mask_rgb_embed=nn.Linear(self.vjepa_config.num_classes_img,hidden_dim, bias=True)
 
         ###Decoders####
         decoder_layer_2d = nn.TransformerDecoderLayer(d_model=hidden_dim, nhead=cfg.MODEL.CG.HEADS)
@@ -148,7 +147,13 @@ class CGSTVG(nn.Module):
             BertLayerNorm(256, eps=1e-12),
         )
 
-        self.conf = MLP(4, self.NCLIPS*self.FRAMES_PER_CLIP, 1, 3,  dropout=0.3)
+        self.conf = MLP(4, self.NCLIPS*self.FRAMES_PER_CLIP, 1, 3,  dropout=0.3)\
+
+        self.d_model = self.cfg.MODEL.CG.HIDDEN
+        if cfg.MODEL.CG.USE_LEARN_TIME_EMBED:
+            self.tgt_embed = SeqEmbeddingLearned(self.NCLIPS * self.FRAMES_PER_CLIP + 1, self.d_model)
+        else:
+            self.tgt_embed = SeqEmbeddingSine(self.NCLIPS * self.FRAMES_PER_CLIP + 1, self.d_model)
 
         return
 
@@ -176,87 +181,85 @@ class CGSTVG(nn.Module):
                 outputs_2d = [[self.vjepa_classifier_2d(ost) for ost in os] for os in vjepa_features]
 
 
+            ###mask decoder features
             mask_motion=self.motion_embed(torch.permute(outputs_motion[0],(1,0)))
             mask_rgb = self.rgb_embed(torch.permute(outputs_2d[0],(1,0)))
 
-            d_model = self.cfg.MODEL.CG.HIDDEN
-            tgt = torch.zeros(self.NCLIPS*self.FRAMES_PER_CLIP, self.B, d_model).to(self.device)
+            mask_motion = torch.unsqueeze(torch.permute(mask_motion, (1, 0)), 1)
+            mask_rgb = torch.unsqueeze(torch.permute(mask_rgb, (1, 0)), 1)
+
+
+            mask_motion = self.mask_motion_embed(mask_motion)
+            mask_rgb = self.mask_rgb_embed(mask_rgb)
+
+
+
 
 
             ####positional embedding backbone
             position_embedding = build_position_encoding(self.cfg)
 
+            ###mask position embeddings
+            motion_pos=torch.unsqueeze(torch.permute(mask_motion, (0,2,1)),-1)
+            rgb_pos = torch.unsqueeze(torch.permute(mask_rgb, (0,2,1)), -1)
 
-            jepa_features=torch.permute(vjepa_features[0],(1,2,0))
-            mask_temp=torch.zeros((jepa_features.size()[0],jepa_features.size()[2]), dtype=torch.bool).to(self.device)
-            # False
-            encoder_pos=position_embedding(torch.unsqueeze(jepa_features,-1),torch.unsqueeze(mask_temp,-1))
+            mask_pos=torch.unsqueeze(torch.zeros(motion_pos.size()[0],motion_pos.size()[2], dtype=torch.bool),-1).to(self.device)
 
-            encoder_pos_sq=torch.squeeze(encoder_pos)
-            encoder_pos=torch.permute(encoder_pos_sq.view(-1, self.NCLIPS*self.FRAMES_PER_CLIP),(1,0))
 
-            encoder_pos_motion=self.encoder_motion_embed(encoder_pos)
-            encoder_pos_rgb = self.encoder_rgb_embed(encoder_pos)
+            encoder_pos_motion = position_embedding(motion_pos, mask_pos)
+            encoder_pos_rgb = position_embedding(rgb_pos, mask_pos)
 
-            ####positional embedding encoder
-            if self.cfg.MODEL.CG.USE_LEARN_TIME_EMBED:
-                self.tgt_embed = SeqEmbeddingLearned(self.NCLIPS*self.FRAMES_PER_CLIP + 1, d_model)
-            else:
-                self.tgt_embed = SeqEmbeddingSine(self.NCLIPS*self.FRAMES_PER_CLIP + 1, d_model)
-            tgt_pos_motion = self.tgt_embed(self.NCLIPS*self.FRAMES_PER_CLIP).to(self.device)
-            tgt_pos_rgb = self.tgt_embed(self.NCLIPS*self.FRAMES_PER_CLIP).to(self.device)
+
+            encoder_pos_motion=torch.squeeze(torch.permute(encoder_pos_motion,(0,2,1,3)),3)
+            encoder_pos_rgb = torch.squeeze(torch.permute(encoder_pos_rgb, (0, 2, 1, 3)), 3)
 
 
 
-            mask_motion_1=torch.unsqueeze(torch.permute(mask_motion,(1,0)),1)
-            mask_rgb_1 = torch.unsqueeze(torch.permute(mask_rgb, (1, 0)), 1)
-            encoder_pos_motion_1 = torch.unsqueeze(encoder_pos_motion, 1)
-            encoder_pos_rgb_1 = torch.unsqueeze(encoder_pos_rgb, 1)
-
-
-            mask_motion_f=self.mask_motion_embed(mask_motion_1)
-            mask_rgb_f=self.mask_rgb_embed(mask_rgb_1)
-            encoder_pos_motion_f = self.mask_motion_embed(encoder_pos_motion_1)
-            encoder_pos_rgb_f = self.mask_rgb_embed(encoder_pos_rgb_1)
-
-
-
+            ####tgt input and positional encoding
+            tgt = torch.zeros(self.NCLIPS * self.FRAMES_PER_CLIP, self.B, self.d_model).to(self.device)
+            tgt_pos = self.tgt_embed(self.NCLIPS*self.FRAMES_PER_CLIP).to(self.device)
 
 
 
 
                 ###visual decoding
-            output_motion=self.decoder_motion(tgt+tgt_pos_motion,mask_motion_f+encoder_pos_motion_f)
-            output_2d = self.decoder_2d(tgt+tgt_pos_rgb, mask_rgb_f+encoder_pos_rgb_f)
+            output_motion=self.decoder_motion(tgt+tgt_pos,mask_motion+encoder_pos_motion)
+            output_2d = self.decoder_2d(tgt+tgt_pos, mask_rgb+encoder_pos_rgb)
 
 
 
-            # # Visual Feature
-            # vis_outputs, vis_pos_embed = self.vis_encoder(videos)
-            # vis_features, vis_mask, vis_durations = vis_outputs.decompose()
-            # vis_features = self.input_proj(vis_features)
-            # vis_outputs = NestedTensor(vis_features, vis_mask, vis_durations)
-            #
-            # vid_features = self.vid(videos.tensors, len(videos.tensors))
-            # vid_features = self.input_proj2(vid_features['3']) # [128, 256, 1, 2]
+
 
             # Textual Feature
             device = clips.device
             text_outputs, _ = self.text_encoder(texts, device)
+            mask_text=text_outputs[1]
 
-            #position_embedding = build_position_encoding(self.cfg)
-            #vis_pos = position_embedding(feat_2d)
+            # expand the attention mask and text token from [b, len] to [n_frames, len]
+              # [text_len, n_frames, d_model]
 
 
-            pos_query, time_query, conf_query =modality_concatenation(self,output_2d, output_motion, text_outputs[1],encoder_pos_motion_f,encoder_pos_rgb_f)
-            ####Decoding
+            #text position embeddings
+            text_pos=torch.unsqueeze(torch.permute(text_outputs[1], (2, 1, 0)), 0)
+            mask_pos_t=torch.unsqueeze(torch.zeros(text_pos.size()[0],text_pos.size()[3], dtype=torch.bool),1).to(self.device)
 
-            # Multimodal Feature Encoding
-            # encoded_info = self.ground_encoder(videos=vis_outputs, vis_pos=vis_pos_embed, texts=text_outputs, vid_features=vid_features)
-            # encoded_info["iteration_rate"] = iteration_rate
-            # encoded_info["videos"] = videos
-            # # Query-based Decoding
-            # outputs_pos, outputs_time = self.ground_decoder(encoded_info=encoded_info, vis_pos=vis_pos_embed, targets=targets)
+            encoder_pos_text = position_embedding(text_pos, mask_pos_t)
+
+            encoder_pos_text = torch.squeeze(torch.permute(encoder_pos_text, (3, 0, 1, 2)),-1)
+
+            ####tgt input and positional encoding
+            tgt_text = torch.zeros(mask_text.size()[0], self.B, self.d_model).to(self.device)
+            tgt_pos_text = self.tgt_embed(mask_text.size()[0]).to(self.device)
+
+
+            output_text = self.decoder_text(tgt_text+tgt_pos_text,mask_text+encoder_pos_text)
+
+
+
+
+            pos_query, time_query, conf_query =modality_concatenation(self,output_2d, output_motion, output_text)
+
+
 
             out = {}
 
