@@ -279,7 +279,7 @@ class CGSTVG(nn.Module):
 
             if self.use_actioness:
                 outputs_actioness = self.action_embed(time_hiden_state)  # [num_layers, b, T, 1]
-                out.update({"pred_actioness": outputs_actioness[-1]})
+                out.update({"pred_actioness": torch.permute(outputs_actioness,(1,0,2))})
 
             if self.use_aux_loss:
                 out["aux_outputs"] = [
