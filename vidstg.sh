@@ -2,7 +2,7 @@
 
 ## TRAINING
 python3 -m torch.distributed.launch \
-    --nproc_per_node=8 \
+    --nproc_per_node=1 \
     scripts/train_net.py \
     --config-file "experiments/vidstg.yaml" \
     INPUT.RESOLUTION 420 \
