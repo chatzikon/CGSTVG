@@ -1,6 +1,6 @@
-OUTPUT_DIR: data/vidstg/checkpoints/
+OUTPUT_DIR: output/vidstg/checkpoints/
 DATA_DIR: data/vidstg/
-TENSORBOARD_DIR: data/vidstg/checkpoints/tensorboard/
+TENSORBOARD_DIR: output/vidstg/checkpoints/tensorboard/
 
 INPUT:
   RESOLUTION: 420
@@ -47,7 +47,7 @@ SOLVER:
   TEMP_LR: 1e-4
   OPTIMIZER: adamw
   VAL_PERIOD: 260000
-  CHECKPOINT_PERIOD: 500
+  CHECKPOINT_PERIOD: 25000
   SHUFFLE: True
   SCHEDULE:
     TYPE: multistep_with_warmup_all
