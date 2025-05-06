@@ -13,3 +13,4 @@ cython
 tqdm
 packaging==21.3
 ftfy
+easydict
