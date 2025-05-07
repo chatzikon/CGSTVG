@@ -86,6 +86,7 @@ class VideoSTGLoss(nn.Module):
         
         target_start = torch.tensor([x[0] for x in gt_temp_bound], dtype=torch.long).to(sted.device)
         target_end = torch.tensor([x[1] for x in gt_temp_bound], dtype=torch.long).to(sted.device)
+        # WARNING masked_fill CRASHES IF BFLOAT16 IS USED
         sted = sted.masked_fill(~time_mask[:, :, None], -1e32)  # put very low probability on the padded positions before softmax
         eps = 1e-6
         
@@ -180,10 +181,16 @@ class VideoSTGLoss(nn.Module):
         device = outputs["pred_boxes"].device
         gt_bbox_slice, gt_temp_bound = [], []
         
+        bbox_slice = [] # indexes of frames that contain bounding boxes
         for i_dur, (duration, target) in enumerate(zip(durations, targets)):
             inter = torch.where(target['actioness'])[0].cpu().numpy().tolist()
+            if len(inter) == 0:
+                raise ValueError("No bounding boxes detected. Should never happen.")
             gt_temp_bound.append([inter[0],inter[-1]])
             gt_bbox_slice.extend(list(range(i_dur * max_duration + inter[0], i_dur * max_duration + inter[-1] + 1)))
+            bbox_slice += inter
+        
+        gt_bbox_slice = bbox_slice
             
         gt_bbox_slice = torch.LongTensor(gt_bbox_slice).to(device)
         outputs["pred_boxes"] = outputs["pred_boxes"][gt_bbox_slice]

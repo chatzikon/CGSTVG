@@ -191,7 +191,7 @@ def build_vjepa_encoder(config):
     return encoder
 
 
-def build_vjepa_classifier(config, encoder, video_data=True,checkpoint_path=None):
+def build_vjepa_classifier(config, encoder, video_data=True, checkpoint_path=None, frozen=False):
     device = "cpu" # caller is responsible for sending the model to the correct device
 
     if video_data:
@@ -213,7 +213,7 @@ def build_vjepa_classifier(config, encoder, video_data=True,checkpoint_path=None
 
     classifier = load_probe_checkpoint(classifier=classifier, path=config.probe_checkpoint)
     
-    if config.probe_frozen:
+    if frozen:
         freeze_weights(classifier)
     
     return classifier

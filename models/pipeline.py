@@ -10,40 +10,24 @@ from .vidswin.video_swin_transformer import vidswin_model
 
 from new.vjepa import build_vjepa_encoder, build_vjepa_classifier, vjepa_predict, VJEPAConfig
 import torch
-
 from models.vision_model.position_encoding import build_position_encoding
-
-from  models.grounding_model.position_encoding import SeqEmbeddingLearned, SeqEmbeddingSine
-
+from models.grounding_model.position_encoding import SeqEmbeddingLearned, SeqEmbeddingSine
 from models.bert_model.bert_module import BertLayerNorm
 
 
 def modality_concatenation(self,feat_2d, feat_motion, feat_text):
-
-
-
     frame_length = feat_2d.size()[0]
     feat_text = feat_text.expand(feat_text.size(0), frame_length, feat_text.size(-1))
-
-
-
-        # concat visual and text features and Pad the vis_pos with 0 for the text tokens
+    # concat visual and text features and Pad the vis_pos with 0 for the text tokens
     concat_features = torch.cat([feat_2d.permute(1,0,2), feat_text, feat_motion.permute(1,0,2)], dim=0)
     #vis_pos = torch.cat([pos_motion, torch.zeros_like(text_features), pos_rgb], dim=0)
-
     frames_cls = torch.mean(concat_features, dim=0)
     videos_cls = torch.mean(frames_cls, dim=0)
-
     pos_query, content_query = self.pos_fc(frames_cls), self.time_fc(videos_cls)
-
     pos_query = pos_query.sigmoid()  # [n_frames, bs, 4]
     content_query = content_query.expand(self.NCLIPS*self.FRAMES_PER_CLIP, content_query.size(-1)).unsqueeze(1)  # [n_frames, bs, d_model]
-
     conf_query=self.conf(pos_query).sigmoid().squeeze()
-
     return pos_query, content_query, conf_query
-
-
 
 
 class CGSTVG(nn.Module):
@@ -88,29 +72,31 @@ class CGSTVG(nn.Module):
         
         #### V-JEPA extension ####
         self.vjepa_config = VJEPAConfig()
+        if self.vjepa_config.use_bfloat16 == True:
+            raise ValueError("bfloat16 is not supported.")
         self.vjepa_encoder = build_vjepa_encoder(self.vjepa_config)
 
         self.vjepa_classifier_motion = build_vjepa_classifier(
             config=self.vjepa_config,
             encoder=self.vjepa_encoder,
             video_data=True,
-            checkpoint_path="JEPA/app/model_zoo/k400-probe.pth.tar"
+            checkpoint_path="model_zoo/vjepa/probes/k400-probe.pth.tar",
+            frozen=True,
         )
 
         self.vjepa_classifier_2d = build_vjepa_classifier(
             config=self.vjepa_config,
             encoder=self.vjepa_encoder,
             video_data=False,
-            checkpoint_path="JEPA/app/model_zoo/in1k-probe.pth.tar"
+            checkpoint_path="model_zoo/vjepa/probes/in1k-probe.pth.tar",
+            frozen=True,
         )
 
-        self.NCLIPS = 8
+        self.NCLIPS = 4
         self.VIEWS_PER_CLIP = 1
-        self.FRAMES_PER_CLIP = 16
+        self.FRAMES_PER_CLIP = 10
         self.B = 1
-
-
-
+        self.T = self.NCLIPS * self.FRAMES_PER_CLIP
 
         ###embeds
         self.motion_embed = MLP(1, (self.NCLIPS * self.FRAMES_PER_CLIP) // 2, self.NCLIPS * self.FRAMES_PER_CLIP, 2,dropout=0.3)
@@ -118,8 +104,6 @@ class CGSTVG(nn.Module):
 
         self.mask_motion_embed = nn.Linear(self.vjepa_config.num_classes_vid, hidden_dim, bias=True)
         self.mask_rgb_embed = nn.Linear(self.vjepa_config.num_classes_img, hidden_dim, bias=True)
-
-
 
         ###Decoders####
         decoder_layer_2d = nn.TransformerDecoderLayer(d_model=hidden_dim, nhead=cfg.MODEL.CG.HEADS)
@@ -160,59 +144,41 @@ class CGSTVG(nn.Module):
 
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
-
-
-
-        T, C, H, W = videos.tensors.shape
-        clips = videos.tensors.reshape(shape=(self.NCLIPS, self.VIEWS_PER_CLIP, self.B, C, self.FRAMES_PER_CLIP, H, W))
-        clip_indices = torch.reshape(targets[0]["frame_ids"], (self.NCLIPS, self.FRAMES_PER_CLIP))
+        T, C, H, W = videos.tensors.shape # T = batch * clips * views_per_clip * frames_per_clip
+        clips = videos.tensors.reshape(shape=(self.B, self.NCLIPS, self.VIEWS_PER_CLIP, C, self.FRAMES_PER_CLIP, H, W))
+        clip_indices = torch.reshape(targets[0]["frame_ids"], (self.NCLIPS, self.FRAMES_PER_CLIP)) # TODO: add support for batch size > 1
         
 
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=self.vjepa_config.use_bfloat16):
             with torch.no_grad():
                 vjepa_features = self.vjepa_encoder(clips, clip_indices)
-
-            if self.vjepa_config.attend_across_segments:
-                outputs_motion = [self.vjepa_classifier_motion(o) for o in vjepa_features]
-                outputs_2d = [self.vjepa_classifier_2d(o) for o in vjepa_features]
-
-            else:
-                outputs_motion = [[self.vjepa_classifier_motion(ost) for ost in os] for os in vjepa_features]
-                outputs_2d = [[self.vjepa_classifier_2d(ost) for ost in os] for os in vjepa_features]
+                if self.vjepa_config.attend_across_segments:
+                    outputs_motion = [self.vjepa_classifier_motion(o) for o in vjepa_features]
+                    outputs_2d = [self.vjepa_classifier_2d(o) for o in vjepa_features]
+                else:
+                    outputs_motion = [[self.vjepa_classifier_motion(ost) for ost in os] for os in vjepa_features]
+                    outputs_2d = [[self.vjepa_classifier_2d(ost) for ost in os] for os in vjepa_features]
 
 
             ###mask decoder features
             mask_motion=self.motion_embed(torch.permute(outputs_motion[0],(1,0)))
             mask_rgb = self.rgb_embed(torch.permute(outputs_2d[0],(1,0)))
-
             mask_motion = torch.unsqueeze(torch.permute(mask_motion, (1, 0)), 1)
             mask_rgb = torch.unsqueeze(torch.permute(mask_rgb, (1, 0)), 1)
-
-
             mask_motion = self.mask_motion_embed(mask_motion)
             mask_rgb = self.mask_rgb_embed(mask_rgb)
 
 
-
-
-
             ####positional embedding backbone
             position_embedding = build_position_encoding(self.cfg)
-
             ###mask position embeddings
             motion_pos=torch.unsqueeze(torch.permute(mask_motion, (0,2,1)),-1)
             rgb_pos = torch.unsqueeze(torch.permute(mask_rgb, (0,2,1)), -1)
-
             mask_pos=torch.unsqueeze(torch.zeros(motion_pos.size()[0],motion_pos.size()[2], dtype=torch.bool),-1).to(self.device)
-
-
             encoder_pos_motion = position_embedding(motion_pos, mask_pos)
             encoder_pos_rgb = position_embedding(rgb_pos, mask_pos)
-
-
             encoder_pos_motion=torch.squeeze(torch.permute(encoder_pos_motion,(0,2,1,3)),3)
             encoder_pos_rgb = torch.squeeze(torch.permute(encoder_pos_rgb, (0, 2, 1, 3)), 3)
-
 
 
             ####tgt input and positional encoding
@@ -220,14 +186,9 @@ class CGSTVG(nn.Module):
             tgt_pos = self.tgt_embed(self.NCLIPS*self.FRAMES_PER_CLIP).to(self.device)
 
 
-
-
-                ###visual decoding
+            ###visual decoding
             output_motion=self.decoder_motion(tgt+tgt_pos,mask_motion+encoder_pos_motion)
             output_2d = self.decoder_2d(tgt+tgt_pos, mask_rgb+encoder_pos_rgb)
-
-
-
 
 
             # Textual Feature
@@ -242,24 +203,20 @@ class CGSTVG(nn.Module):
             #text position embeddings
             text_pos=torch.unsqueeze(torch.permute(text_outputs[1], (2, 1, 0)), 0)
             mask_pos_t=torch.unsqueeze(torch.zeros(text_pos.size()[0],text_pos.size()[3], dtype=torch.bool),1).to(self.device)
-
             encoder_pos_text = position_embedding(text_pos, mask_pos_t)
-
             encoder_pos_text = torch.squeeze(torch.permute(encoder_pos_text, (3, 0, 1, 2)),-1)
 
             ####tgt input and positional encoding
             tgt_text = torch.zeros(mask_text.size()[0], self.B, self.d_model).to(self.device)
             tgt_pos_text = self.tgt_embed(mask_text.size()[0]).to(self.device)
-
-
             output_text = self.decoder_text(tgt_text+tgt_pos_text,mask_text+encoder_pos_text)
 
 
-
-
             pos_query, time_query, conf_query =modality_concatenation(self,output_2d, output_motion, output_text)
-
-
+            
+            NUM_LAYERS = 1
+            pos_query = pos_query.reshape(shape=(NUM_LAYERS, self.T, 4)) # [T, 4] -> [NUM_LAYERS, T, 4]
+            conf_query = conf_query.reshape(shape=(NUM_LAYERS, self.T)) # [T] -> [NUM_LAYERS, T]
 
             out = {}
 
@@ -267,19 +224,21 @@ class CGSTVG(nn.Module):
             ###############  predict bounding box ###############
 
             #outputs_coord = refer_anchors.flatten(1,2)  # [num_layers, T, 4]
-            out.update({"pred_boxes": pos_query})
-            out.update({"boxes_conf": conf_query})
+            out.update({"pred_boxes": pos_query[-1]})
+            out.update({"boxes_conf": conf_query[-1]})
             ######################################################
 
             #######  predict the start and end probability #######
             time_hiden_state = time_query
             outputs_time = self.temp_embed(time_hiden_state)  # [num_layers, b, T, 2]
-            out.update({"pred_sted": torch.permute(outputs_time,(1,0,2))})
+            outputs_time = outputs_time.permute(dims=(1,0,2))
+            outputs_time = outputs_time.reshape(shape=(NUM_LAYERS, self.B, self.T, 2)) # [B, T, 2] -> [NUM_LAYERS, B, T, 2]
+            out.update({"pred_sted": outputs_time[-1]})
             #######################################################
 
             if self.use_actioness:
-                outputs_actioness = self.action_embed(time_hiden_state)  # [num_layers, b, T, 1]
-                out.update({"pred_actioness": torch.permute(outputs_actioness,(1,0,2))})
+                outputs_actioness = self.action_embed(time_hiden_state).reshape(shape=(-1, self.B, self.T, 1))  # [num_layers, b, T, 1]
+                out.update({"pred_actioness": outputs_actioness[-1]})
 
             if self.use_aux_loss:
                 out["aux_outputs"] = [
@@ -288,7 +247,7 @@ class CGSTVG(nn.Module):
                         "pred_boxes": b,
                         "boxes_conf": c
                     }
-                    for a, b, c in zip(outputs_time[:-1], pos_query, conf_query)
+                    for a, b, c in zip(outputs_time[:-1], pos_query[:-1], conf_query[:-1])
                 ]
                 for i_aux in range(len(out["aux_outputs"])):
                     if self.use_actioness:
