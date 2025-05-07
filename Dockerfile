@@ -16,4 +16,6 @@ COPY ./ ./
 
 ENV PYTHONPATH="/app:"
 
+ENV PYTHONWARNINGS="ignore"
+
 CMD [ "bash", "vidstg.sh" ]
