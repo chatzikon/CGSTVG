@@ -768,6 +768,7 @@ def vidswin_model(model_name: AnyStr, model_path: AnyStr = None):
     assert model_path is None or (model_path in model_paths.keys() or os.path.exists(model_path)), \
         f"The specified model_path '{model_path}' is invalid. It must either be an existing file path or " \
         f"a valid key listed in {model_paths.keys()}."
+    print(model_path)
     if model_path is not None:
         if model_path in model_paths:
             model_path = model_paths[model_path]

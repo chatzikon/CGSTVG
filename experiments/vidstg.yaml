@@ -31,7 +31,7 @@ DATALOADER:
   ASPECT_RATIO_GROUPING: False
 
 SOLVER:
-  MAX_EPOCH: 10
+  MAX_EPOCH: 1
   BATCH_SIZE: 1
   BBOX_COEF: 5
   GIOU_COEF: 3
@@ -53,3 +53,5 @@ SOLVER:
     TYPE: multistep_with_warmup_all
     DROP_STEP: [8,10]
   PRE_VAL: False
+
+

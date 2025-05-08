@@ -180,3 +180,5 @@ _C.SOLVER.USE_ATTN = False  # whether to use the guided attention loss, to compa
 _C.SOLVER.SIGMA = 2.0  # standard deviation for the quantized gaussian law used for the kullback leibler divergence loss
 _C.SOLVER.USE_AUX_LOSS = True # whether to use auxiliary decoding losses (loss at each layer)
 _C.SOLVER.EOS_COEF = 0.1  # The coeff for negative sample
+
+

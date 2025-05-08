@@ -9,4 +9,3 @@ python3 -m torch.distributed.launch \
     OUTPUT_DIR output/vidstg \
     TENSORBOARD_DIR output/vidstg \
     | tee tee_log_train.txt
-

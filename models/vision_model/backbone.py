@@ -149,6 +149,7 @@ class Joiner(nn.Sequential):
         super().__init__(backbone, position_embedding)
 
     def forward(self, tensor_list):
+
         xs = self[0](tensor_list)
         out = []
         pos = []

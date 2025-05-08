@@ -197,7 +197,98 @@ class VidSTGDataset(data.Dataset):
             'ori_size' : (h, w)
         }
 
+        indexes = np.array(self.sample_continuous_segments(action_idx=action_idx, total_frames=len(frames))).flatten()
+        input_dict["frames"] = torch.from_numpy(np.array(input_dict["frames"])[indexes])
+        targets["frame_ids"] = torch.from_numpy(np.array(targets["frame_ids"])[indexes])
+        targets["actioness"] = torch.from_numpy(np.array(input_dict["actioness"])[indexes])
+        targets["start_heatmap"] = torch.from_numpy(np.array(targets["start_heatmap"])[indexes])
+        targets["end_heatmap"] = torch.from_numpy(np.array(targets["end_heatmap"])[indexes])
+
+        # targets["boxs"] = self.make_boxes(
+        #     frame_ids=targets["frame_ids"],
+        #     gt_temp_bound=data_item["gt_temp_bound"],
+        #     actioness=targets["actioness"],
+        #     bboxs_in=data_item["bboxs"],
+        #     width=data_item["width"],
+        #     height=data_item["height"],
+        # )
+
+        targets["boxs"] = self.make_boxes(
+            frame_ids=targets["frame_ids"],
+            gt_temp_bound=data_item["gt_temp_bound"],
+            actioness=targets["actioness"],
+            bboxs_in=data_item["bboxs"],
+            width=data_item["width"],
+            height=data_item["height"],
+            number_of_clips=8,
+        )
+
+        # for clip in range(8):
+        #     input_dict = {
+        #         'frames': frames[clip],
+        #         'boxs': targets["boxs"][clip],
+        #         'text': sentence,
+        #     }
+        #     print(input_dict)
+        #     if self.transforms is not None:
+        #         input_dict = self.transforms(input_dict)
+        #     targets["boxs"][clip] = input_dict["boxs"]
+        
         return input_dict['frames'], sentence, targets
+    
+    """
+    input_dict['frames'] -> (T, C, H, W) -> (clips, frames_per_clip, H, W, C)
+    clip_indices -> (clips, frames_per_clip)
+    sentence -> unchanged
+    targets
+        item_id -> unchanged
+        frame_ids -> (T) -> (clips, frames_per_clip)
+        actioness -> (T) -> (clips, frames_per_clip)
+        start_heatmap -> (T) -> (clips, frames_per_clip)
+        end_heatmap -> (T) -> (clips, frames_per_clip)
+        boxs -> object -> (clips)
+        qtype -> unchanged
+        img_size -> unchanged
+        ori_size -> unchanged
+    
+    (clips, boxes)
+    """
+
+    def sample_continuous_segments(self, action_idx, total_frames, frames_per_segment=10, num_segments=4):
+        if total_frames < frames_per_segment:
+            raise ValueError(f"Number of frames ({total_frames}) sampled from video must be at least {frames_per_segment}.")
+        first_frame_index = 0
+        last_frame_index = total_frames - 1
+        clip_indices = []
+        for i in range(num_segments):
+            if i == 0:
+                start_index = np.random.choice(action_idx)
+            else:
+                start_index = np.random.randint(first_frame_index, last_frame_index)
+            end_index = start_index + frames_per_segment - 1
+            indices = np.linspace(start_index, end_index, num=frames_per_segment)
+            indices = np.clip(indices, start_index, total_frames-1).astype(np.int64)
+            clip_indices.append(indices)
+        return clip_indices
+
+
+    def make_boxes(self, frame_ids, gt_temp_bound, actioness, bboxs_in, width, height, number_of_clips):
+        boxes = torch.zeros(size=(0,4))
+        for i in range(number_of_clips):
+            actioness_i = actioness.reshape(shape=(number_of_clips, -1))[i]
+            frame_ids_i = frame_ids.reshape(shape=(number_of_clips, -1))[i]
+            action_idx = np.where(actioness_i)[0]
+            if(action_idx.shape[0] < 1):
+                boxes = torch.cat(tensors=(boxes, torch.zeros(size=(0,4))), dim=0)
+                continue
+            start_idx, end_idx = action_idx[0], action_idx[-1]
+            bbox_idx = [frame_ids_i[idx] - gt_temp_bound[0] for idx in range(start_idx,end_idx + 1)]
+            bboxs = torch.from_numpy(bboxs_in[bbox_idx]).reshape(-1, 4)
+            assert bboxs.shape[0] == len(action_idx)
+
+            boxes = torch.cat(tensors=(boxes, bboxs), dim=0)
+        return BoxList(boxes, (width, height), 'xyxy')
+
 
     def __len__(self) -> int:
         return len(self.all_gt_data)
