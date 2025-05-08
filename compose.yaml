@@ -4,13 +4,14 @@ services:
     image: cgstvg
     build: .
     volumes:
-      - ./data:/app/data
-      - ./model_zoo:/app/model_zoo
+      - ./data:/app/data:ro
+      - ./model_zoo:/app/model_zoo:ro
     ipc: host
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              # count: 1
+              device_ids: [ '0', '1' ]
               capabilities: [ gpu ]

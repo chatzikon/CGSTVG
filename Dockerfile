@@ -1,5 +1,5 @@
 # Docker version 27.3.1
-FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
 
 RUN apt-get update -y
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg
@@ -27,7 +27,4 @@ ENV PYTHONPATH="/app:/app/JEPA:/app/JEPA/new"
 
 ENV PYTHONWARNINGS="ignore"
 
-ENV PYTHONUNBUFFERED="1"
-
 CMD [ "bash", "vidstg.sh" ]
-# CMD [ "bash", "JEPA/new/vjepa.sh" ]

@@ -3,10 +3,10 @@ DATA_DIR: data/vidstg/
 TENSORBOARD_DIR: output/vidstg/checkpoints/tensorboard/
 
 INPUT:
-  RESOLUTION: 64 # 100 is ~8GB
+  RESOLUTION: 100
   FLIP_PROB_TRAIN: 0.7
   TEMP_CROP_PROB: 0.5
-  TRAIN_SAMPLE_NUM: 64
+  TRAIN_SAMPLE_NUM: 128
 
 MODEL:
   WEIGHT: model_zoo/pretrained_resnet101_checkpoint.pth
@@ -47,7 +47,7 @@ SOLVER:
   TEMP_LR: 1e-4
   OPTIMIZER: adamw
   VAL_PERIOD: 260000
-  CHECKPOINT_PERIOD: 20000
+  CHECKPOINT_PERIOD: 25000
   SHUFFLE: True
   SCHEDULE:
     TYPE: multistep_with_warmup_all

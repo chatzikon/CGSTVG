@@ -15,7 +15,7 @@ from models.grounding_model.position_encoding import SeqEmbeddingLearned, SeqEmb
 from models.bert_model.bert_module import BertLayerNorm
 
 
-def modality_concatenation(self,feat_2d, feat_motion, feat_text):
+def modality_concatenation(self, feat_2d, feat_motion, feat_text):
     frame_length = feat_2d.size()[0]
     feat_text = feat_text.expand(feat_text.size(0), frame_length, feat_text.size(-1))
     # concat visual and text features and Pad the vis_pos with 0 for the text tokens
@@ -25,7 +25,7 @@ def modality_concatenation(self,feat_2d, feat_motion, feat_text):
     videos_cls = torch.mean(frames_cls, dim=0)
     pos_query, content_query = self.pos_fc(frames_cls), self.time_fc(videos_cls)
     pos_query = pos_query.sigmoid()  # [n_frames, bs, 4]
-    content_query = content_query.expand(self.NCLIPS*self.FRAMES_PER_CLIP, content_query.size(-1)).unsqueeze(1)  # [n_frames, bs, d_model]
+    content_query = content_query.expand(self.FRAMES_PER_SAMPLE, content_query.size(-1)).unsqueeze(1)  # [n_frames, bs, d_model]
     conf_query=self.conf(pos_query).sigmoid().squeeze()
     return pos_query, content_query, conf_query
 
@@ -92,11 +92,11 @@ class CGSTVG(nn.Module):
             frozen=True,
         )
 
-        self.NCLIPS = 4
+        self.NCLIPS = 8
         self.VIEWS_PER_CLIP = 1
-        self.FRAMES_PER_CLIP = 10
+        self.FRAMES_PER_SAMPLE = 128
+        self.FRAMES_PER_CLIP = self.FRAMES_PER_SAMPLE // self.NCLIPS
         self.B = 1
-        self.T = self.NCLIPS * self.FRAMES_PER_CLIP
 
         ###embeds
         self.motion_embed = MLP(1, (self.NCLIPS * self.FRAMES_PER_CLIP) // 2, self.NCLIPS * self.FRAMES_PER_CLIP, 2,dropout=0.3)
@@ -145,8 +145,20 @@ class CGSTVG(nn.Module):
 
     def forward(self, videos, texts, targets, iteration_rate=-1):
         T, C, H, W = videos.tensors.shape # T = batch * clips * views_per_clip * frames_per_clip
-        clips = videos.tensors.reshape(shape=(self.B, self.NCLIPS, self.VIEWS_PER_CLIP, C, self.FRAMES_PER_CLIP, H, W))
-        clip_indices = torch.reshape(targets[0]["frame_ids"], (self.NCLIPS, self.FRAMES_PER_CLIP)) # TODO: add support for batch size > 1
+        frame_ids = torch.tensor(targets[0]["frame_ids"])
+        
+        nframes_required = self.FRAMES_PER_SAMPLE - T
+        if nframes_required > 0:
+            pad = videos.tensors[-1].unsqueeze(0).repeat(nframes_required, 1, 1, 1)
+            videos.tensors = torch.cat(tensors=(videos.tensors, pad), dim=0)
+
+            pad = frame_ids[-1].unsqueeze(0).repeat(nframes_required)
+            frame_ids = torch.cat(tensors=(frame_ids, pad), dim=0)
+            print(videos.tensors.shape, frame_ids.shape)
+
+        clips = videos.tensors.reshape(shape=(self.B, self.NCLIPS, self.VIEWS_PER_CLIP, self.FRAMES_PER_CLIP, C, H, W))
+        clips = clips.permute(dims=(1, 2, 0, 4, 3, 5, 6)) # [B, CLIPS, VIEWS, FRAMES_PER_CLIP, C, H, W] -> [CLIPS, VIEWS, B, C, FRAMES_PER_CLIP, H, W]
+        clip_indices = torch.reshape(frame_ids, (self.NCLIPS, self.FRAMES_PER_CLIP)) # TODO: add support for batch size > 1
         
 
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=self.vjepa_config.use_bfloat16):
@@ -182,8 +194,8 @@ class CGSTVG(nn.Module):
 
 
             ####tgt input and positional encoding
-            tgt = torch.zeros(self.NCLIPS * self.FRAMES_PER_CLIP, self.B, self.d_model).to(self.device)
-            tgt_pos = self.tgt_embed(self.NCLIPS*self.FRAMES_PER_CLIP).to(self.device)
+            tgt = torch.zeros(self.FRAMES_PER_SAMPLE, self.B, self.d_model).to(self.device)
+            tgt_pos = self.tgt_embed(self.FRAMES_PER_SAMPLE).to(self.device)
 
 
             ###visual decoding
@@ -211,12 +223,11 @@ class CGSTVG(nn.Module):
             tgt_pos_text = self.tgt_embed(mask_text.size()[0]).to(self.device)
             output_text = self.decoder_text(tgt_text+tgt_pos_text,mask_text+encoder_pos_text)
 
-
-            pos_query, time_query, conf_query =modality_concatenation(self,output_2d, output_motion, output_text)
+            pos_query, time_query, conf_query = modality_concatenation(self, output_2d, output_motion, output_text)
             
             NUM_LAYERS = 1
-            pos_query = pos_query.reshape(shape=(NUM_LAYERS, self.T, 4)) # [T, 4] -> [NUM_LAYERS, T, 4]
-            conf_query = conf_query.reshape(shape=(NUM_LAYERS, self.T)) # [T] -> [NUM_LAYERS, T]
+            pos_query = pos_query.reshape(shape=(NUM_LAYERS, self.FRAMES_PER_SAMPLE, 4)) # [FRAMES_PER_SAMPLE, 4] -> [NUM_LAYERS, FRAMES_PER_SAMPLE, 4]
+            conf_query = conf_query.reshape(shape=(NUM_LAYERS, self.FRAMES_PER_SAMPLE)) # [FRAMES_PER_SAMPLE] -> [NUM_LAYERS, FRAMES_PER_SAMPLE]
 
             out = {}
 
@@ -232,12 +243,12 @@ class CGSTVG(nn.Module):
             time_hiden_state = time_query
             outputs_time = self.temp_embed(time_hiden_state)  # [num_layers, b, T, 2]
             outputs_time = outputs_time.permute(dims=(1,0,2))
-            outputs_time = outputs_time.reshape(shape=(NUM_LAYERS, self.B, self.T, 2)) # [B, T, 2] -> [NUM_LAYERS, B, T, 2]
+            outputs_time = outputs_time.reshape(shape=(NUM_LAYERS, self.B, self.FRAMES_PER_SAMPLE, 2)) # [B, FRAMES_PER_SAMPLE, 2] -> [NUM_LAYERS, B, FRAMES_PER_SAMPLE, 2]
             out.update({"pred_sted": outputs_time[-1]})
             #######################################################
 
             if self.use_actioness:
-                outputs_actioness = self.action_embed(time_hiden_state).reshape(shape=(-1, self.B, self.T, 1))  # [num_layers, b, T, 1]
+                outputs_actioness = self.action_embed(time_hiden_state).reshape(shape=(-1, self.B, self.FRAMES_PER_SAMPLE, 1))  # [num_layers, b, FRAMES_PER_SAMPLE, 1]
                 out.update({"pred_actioness": outputs_actioness[-1]})
 
             if self.use_aux_loss:
@@ -254,4 +265,3 @@ class CGSTVG(nn.Module):
                         out["aux_outputs"][i_aux]["pred_actioness"] = outputs_actioness[i_aux]
 
         return out
-
